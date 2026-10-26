@@ -56,3 +56,34 @@ func TestFormattingHandler(t *testing.T) {
 		t.Error("mismatch")
 	}
 }
+
+func TestFormattingHandlerWithoutTimestamp(t *testing.T) {
+	buf := new(bytes.Buffer)
+	h := &formattingHandler{
+		opts: &formattingOptions{
+			LineFormat: LineFormat{
+				TimestampFormat: "",
+				LevelString:     false,
+				LevelSyslog:     true,
+			},
+			out:          buf,
+			timeOverride: time.Unix(1234567890, 0).In(time.UTC),
+		},
+	}
+
+	l := slog.New(h)
+	l.Info("Info without timestamp")
+	l.Warn("Warn without timestamp")
+	l.Error("Error without timestamp")
+
+	exp := `
+<6>Info without timestamp (log.pkg=slogutil)
+<4>Warn without timestamp (log.pkg=slogutil)
+<3>Error without timestamp (log.pkg=slogutil)`
+
+	if strings.TrimSpace(buf.String()) != strings.TrimSpace(exp) {
+		t.Log(buf.String())
+		t.Log(exp)
+		t.Error("mismatch")
+	}
+}

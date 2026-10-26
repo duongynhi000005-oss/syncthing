@@ -5,6 +5,9 @@ Documentation=man:strelaysrv(1)
 
 [Service]
 WorkingDirectory=/var/lib/syncthing-relaysrv
+Environment="STLOGFORMATTIMESTAMP="
+Environment="STLOGFORMATLEVELSTRING=false"
+Environment="STLOGFORMATLEVELSYSLOG=true"
 EnvironmentFile=/etc/default/syncthing-relaysrv
 ExecStart=/usr/bin/strelaysrv -nat=${NAT} $RELAYSRV_OPTS
 

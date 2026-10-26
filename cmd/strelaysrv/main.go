@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/syncthing/syncthing/internal/slogutil"
 	"github.com/syncthing/syncthing/lib/build"
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/events"
@@ -79,10 +81,29 @@ var (
 	}
 )
 
+func envOrDefaultString(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
+func envOrDefaultBool(key string, def bool) bool {
+	if v, ok := os.LookupEnv(key); ok {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return def
+}
+
 func main() {
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
+	log.SetFlags(log.Lshortfile)
 
 	var dir, extAddress, proto string
+	logFormatTimestamp := envOrDefaultString("STLOGFORMATTIMESTAMP", slogutil.DefaultLineFormat.TimestampFormat)
+	logFormatLevelString := envOrDefaultBool("STLOGFORMATLEVELSTRING", slogutil.DefaultLineFormat.LevelString)
+	logFormatLevelSyslog := envOrDefaultBool("STLOGFORMATLEVELSYSLOG", slogutil.DefaultLineFormat.LevelSyslog)
 
 	flag.StringVar(&listen, "listen", ":22067", "Protocol listen address")
 	flag.StringVar(&dir, "keys", ".", "Directory where cert.pem and key.pem is stored")
@@ -104,8 +125,20 @@ func main() {
 	flag.IntVar(&natTimeout, "nat-timeout", 10, "NAT discovery timeout in seconds")
 	flag.BoolVar(&pprofEnabled, "pprof", false, "Enable the built in profiling on the status server")
 	flag.IntVar(&networkBufferSize, "network-buffer", 65536, "Network buffer size (two of these per proxied connection)")
+	flag.StringVar(&logFormatTimestamp, "log-format-timestamp", logFormatTimestamp, "Format for timestamp, set to empty to disable timestamps")
+	flag.BoolVar(&logFormatLevelString, "log-format-level-string", logFormatLevelString, "Whether to include level string in log line")
+	flag.BoolVar(&logFormatLevelSyslog, "log-format-level-syslog", logFormatLevelSyslog, "Whether to include level as syslog prefix in log line")
 	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
+
+	slogutil.SetLineFormat(slogutil.LineFormat{
+		TimestampFormat: logFormatTimestamp,
+		LevelString:     logFormatLevelString,
+		LevelSyslog:     logFormatLevelSyslog,
+	})
+	if debug {
+		slogutil.SetDefaultLevel(slog.LevelDebug)
+	}
 
 	longVer := build.LongVersionFor("strelaysrv")
 	if *showVersion {

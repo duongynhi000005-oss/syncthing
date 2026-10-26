@@ -5,6 +5,9 @@ Documentation=man:stdiscosrv(1)
 
 [Service]
 WorkingDirectory=/var/lib/syncthing-discosrv
+Environment="STLOGFORMATTIMESTAMP="
+Environment="STLOGFORMATLEVELSTRING=false"
+Environment="STLOGFORMATLEVELSYSLOG=true"
 EnvironmentFile=/etc/default/syncthing-discosrv
 ExecStart=/usr/bin/stdiscosrv $DISCOSRV_OPTS
 

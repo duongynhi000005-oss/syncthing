@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -81,13 +82,27 @@ type CLI struct {
 
 	AMQPAddress string `group:"AMQP replication" hidden:"true" help:"Address to AMQP broker" env:"DISCOVERY_AMQP_ADDRESS"`
 
+	LogFormatTimestamp   string `name:"log-format-timestamp" help:"Format for timestamp, set to empty to disable timestamps" env:"STLOGFORMATTIMESTAMP,DISCOVERY_LOG_FORMAT_TIMESTAMP" default:"${timestampFormat}"`
+	LogFormatLevelString bool   `name:"log-format-level-string" help:"Whether to include level string in log line" env:"STLOGFORMATLEVELSTRING,DISCOVERY_LOG_FORMAT_LEVEL_STRING" default:"${levelString}" negatable:""`
+	LogFormatLevelSyslog bool   `name:"log-format-level-syslog" help:"Whether to include level as syslog prefix in log line" env:"STLOGFORMATLEVELSYSLOG,DISCOVERY_LOG_FORMAT_LEVEL_SYSLOG" default:"${levelSyslog}" negatable:""`
+
 	Debug   bool `short:"d" help:"Print debug output" env:"DISCOVERY_DEBUG"`
 	Version bool `short:"v" help:"Print version and exit"`
 }
 
 func main() {
 	var cli CLI
-	kong.Parse(&cli)
+	kong.Parse(&cli, kong.Vars{
+		"levelString":     strconv.FormatBool(slogutil.DefaultLineFormat.LevelString),
+		"levelSyslog":     strconv.FormatBool(slogutil.DefaultLineFormat.LevelSyslog),
+		"timestampFormat": slogutil.DefaultLineFormat.TimestampFormat,
+	})
+
+	slogutil.SetLineFormat(slogutil.LineFormat{
+		TimestampFormat: cli.LogFormatTimestamp,
+		LevelString:     cli.LogFormatLevelString,
+		LevelSyslog:     cli.LogFormatLevelSyslog,
+	})
 
 	level := slog.LevelInfo
 	if cli.Debug {
