@@ -72,10 +72,15 @@ func (c *configMuxBuilder) registerFolders(path string) {
 		}
 		folders := make([]config.FolderConfiguration, len(data))
 		defaultFolder := c.cfg.DefaultFolder()
+		defaultFolder.Path = ""
 		for i, bs := range data {
 			folders[i] = defaultFolder.Copy()
 			if err := json.Unmarshal(bs, &folders[i]); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if folders[i].Path == "" {
+				http.Error(w, "folder has empty path", http.StatusBadRequest)
 				return
 			}
 		}
@@ -90,7 +95,9 @@ func (c *configMuxBuilder) registerFolders(path string) {
 	})
 
 	c.HandlerFunc(http.MethodPost, path, func(w http.ResponseWriter, r *http.Request) {
-		c.adjustFolder(w, r, c.cfg.DefaultFolder(), false)
+		folder := c.cfg.DefaultFolder()
+		folder.Path = ""
+		c.adjustFolder(w, r, folder, false)
 	})
 }
 
@@ -140,7 +147,9 @@ func (c *configMuxBuilder) registerFolder(path string) {
 	})
 
 	c.Handle(http.MethodPut, path, func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		c.adjustFolder(w, r, c.cfg.DefaultFolder(), false)
+		folder := c.cfg.DefaultFolder()
+		folder.Path = ""
+		c.adjustFolder(w, r, folder, false)
 	})
 
 	c.Handle(http.MethodPatch, path, func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -340,6 +349,10 @@ func (c *configMuxBuilder) adjustConfig(w http.ResponseWriter, r *http.Request) 
 func (c *configMuxBuilder) adjustFolder(w http.ResponseWriter, r *http.Request, folder config.FolderConfiguration, defaults bool) {
 	if err := unmarshalTo(r.Body, &folder); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !defaults && folder.Path == "" {
+		http.Error(w, "folder has empty path", http.StatusBadRequest)
 		return
 	}
 	waiter, err := c.cfg.Modify(func(cfg *config.Configuration) {

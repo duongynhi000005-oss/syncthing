@@ -1808,6 +1808,102 @@ func TestConfigChanges(t *testing.T) {
 	}
 }
 
+func TestConfigFolderEmptyPathRejected(t *testing.T) {
+	t.Parallel()
+
+	const testAPIKey = "foobarbaz"
+	cfg := config.Configuration{
+		GUI: config.GUIConfiguration{
+			RawAddress: "127.0.0.1:0",
+			RawUseTLS:  false,
+			APIKey:     testAPIKey,
+		},
+	}
+	tmpFile, err := os.CreateTemp("", "syncthing-testConfigFolderEmptyPath-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(tmpFile.Name())
+	w := config.Wrap(tmpFile.Name(), cfg, protocol.LocalDeviceID, events.NoopLogger)
+	tmpFile.Close()
+	cfgCtx, cfgCancel := context.WithCancel(context.Background())
+	go w.Serve(cfgCtx)
+	defer cfgCancel()
+	baseURL := startHTTP(t, w)
+
+	cli := &http.Client{
+		Timeout: time.Minute,
+	}
+
+	do := func(req *http.Request, status int) *http.Response {
+		t.Helper()
+		req.Header.Set("X-API-Key", testAPIKey)
+		resp, err := cli.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != status {
+			t.Errorf("Expected status %v, got %v", status, resp.StatusCode)
+		}
+		return resp
+	}
+
+	send := func(method, path string, data any, expectedStatus int) *http.Response {
+		t.Helper()
+		bs, err := json.Marshal(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequest(method, baseURL+path, bytes.NewReader(bs))
+		return do(req, expectedStatus)
+	}
+
+	// 1. With a default folder path configured:
+	send(http.MethodPatch, "/rest/config/defaults/folder", map[string]string{"path": "/default/folder/path"}, http.StatusOK).Body.Close()
+
+	// Posting or putting a folder without path must be rejected with 400 Bad Request
+	send(http.MethodPost, "/rest/config/folders", map[string]string{"id": "f_nopath_with_default", "label": "test"}, http.StatusBadRequest).Body.Close()
+	send(http.MethodPost, "/rest/config/folders", map[string]string{"id": "f_empty_with_default", "path": ""}, http.StatusBadRequest).Body.Close()
+	send(http.MethodPut, "/rest/config/folders/f_put_with_default", map[string]string{"id": "f_put_with_default"}, http.StatusBadRequest).Body.Close()
+	send(http.MethodPut, "/rest/config/folders", []map[string]string{{"id": "f1", "path": "/valid/f1"}, {"id": "f2"}}, http.StatusBadRequest).Body.Close()
+
+	// 2. With an empty default folder path:
+	send(http.MethodPatch, "/rest/config/defaults/folder", map[string]string{"path": ""}, http.StatusOK).Body.Close()
+
+	// Posting or putting without path must still be rejected with 400 Bad Request (client error, not 500)
+	send(http.MethodPost, "/rest/config/folders", map[string]string{"id": "f_nopath_nodefault"}, http.StatusBadRequest).Body.Close()
+	send(http.MethodPost, "/rest/config/folders", map[string]string{"id": "f_empty_nodefault", "path": ""}, http.StatusBadRequest).Body.Close()
+	send(http.MethodPut, "/rest/config/folders/f_put_nodefault", map[string]string{"id": "f_put_nodefault"}, http.StatusBadRequest).Body.Close()
+
+	// 3. Creating a folder with a valid path succeeds
+	send(http.MethodPost, "/rest/config/folders", map[string]string{"id": "f_valid", "path": "/valid/path"}, http.StatusOK).Body.Close()
+
+	reqGet, _ := http.NewRequest(http.MethodGet, baseURL+"/rest/config/folders/f_valid", nil)
+	resp := do(reqGet, http.StatusOK)
+	var folder config.FolderConfiguration
+	if err := unmarshalTo(resp.Body, &folder); err != nil {
+		t.Fatal(err)
+	}
+	if folder.Path != "/valid/path" {
+		t.Errorf("Expected path '/valid/path', got %q", folder.Path)
+	}
+
+	// 4. Patching without modifying path preserves existing path
+	send(http.MethodPatch, "/rest/config/folders/f_valid", map[string]string{"label": "new label"}, http.StatusOK).Body.Close()
+	reqGet2, _ := http.NewRequest(http.MethodGet, baseURL+"/rest/config/folders/f_valid", nil)
+	resp2 := do(reqGet2, http.StatusOK)
+	var folder2 config.FolderConfiguration
+	if err := unmarshalTo(resp2.Body, &folder2); err != nil {
+		t.Fatal(err)
+	}
+	if folder2.Path != "/valid/path" {
+		t.Errorf("Expected path '/valid/path' to be preserved, got %q", folder2.Path)
+	}
+
+	// 5. Patching with explicit empty path is rejected with 400 Bad Request
+	send(http.MethodPatch, "/rest/config/folders/f_valid", map[string]string{"path": ""}, http.StatusBadRequest).Body.Close()
+}
+
 func TestSanitizedHostname(t *testing.T) {
 	cases := []struct {
 		in, out string
