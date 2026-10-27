@@ -566,6 +566,22 @@ func TestAvailability(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Remote device with ignored/invalid file (e.g. from .stignore)
+	fIgnored := genFile("test2", 2, 2)
+	fIgnored.LocalFlags = protocol.FlagLocalRemoteInvalid
+	err = db.Update(folderID, protocol.DeviceID{48}, []protocol.FileInfo{fIgnored})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remote device with deleted file
+	fDeleted := genFile("test3", 3, 3)
+	fDeleted.Deleted = true
+	err = db.Update(folderID, protocol.DeviceID{49}, []protocol.FileInfo{fDeleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	a, err := db.GetGlobalAvailability(folderID, "test1")
 	if err != nil {
 		t.Fatal(err)
